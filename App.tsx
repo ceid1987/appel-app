@@ -1,117 +1,171 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useState} from 'react';
 import {
   SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
   View,
+  Text,
+  TextInput,
+  Button,
+  StyleSheet,
+  PermissionsAndroid,
+  Platform,
+  NativeModules,
 } from 'react-native';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+const {BeaconAdvertiser} = NativeModules;
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+const App = () => {
+  // State for UUID, Major, Minor
+  const [uuid, setUuid] = useState('2D7A9F0C-E0E8-4CC9-A71B-A21DB2D034A1');
+  const [major, setMajor] = useState('100');
+  const [minor, setMinor] = useState('1');
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+  // Whether the beacon is currently advertising
+  const [isAdvertising, setIsAdvertising] = useState(false);
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  // A message to show status updates (e.g., "Beacon has been stopped")
+  const [statusMessage, setStatusMessage] = useState('');
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  /**
+   * Request necessary BLE permissions on Android 12+.
+   */
+  const requestBluetoothPermissions = async () => {
+    if (Platform.OS === 'android') {
+      if (Platform.Version >= 31) {
+        const permissions = [
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        ];
+        await PermissionsAndroid.requestMultiple(permissions);
+      } else {
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        );
+      }
+    }
+  };
+
+  /**
+   * Start the beacon advertising.
+   */
+  const startBeacon = async () => {
+    setStatusMessage(''); // Clear any old message
+    try {
+      await requestBluetoothPermissions();
+
+      await BeaconAdvertiser.startAdvertising(
+        uuid,
+        parseInt(major, 10),
+        parseInt(minor, 10),
+        true, // Use a pseudo MAC address
+      );
+
+      // If successful, update state
+      setIsAdvertising(true);
+    } catch (error) {
+      console.error('Error starting beacon:', error);
+      setStatusMessage('Failed to start beacon.');
+    }
+  };
+
+  /**
+   * Stop the beacon advertising.
+   */
+  const stopBeacon = async () => {
+    try {
+      await BeaconAdvertiser.stopAdvertising();
+      setIsAdvertising(false);
+      setStatusMessage('Beacon has been stopped');
+    } catch (error) {
+      console.error('Error stopping beacon:', error);
+      setStatusMessage('Failed to stop beacon.');
+    }
   };
 
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
+    <SafeAreaView style={styles.container}>
+      {/* Title */}
+      <Text style={styles.title}>STRI Liste Appel</Text>
+
+      {/* Beacon configuration inputs */}
+      <View style={styles.inputGroup}>
+        <Text>UUID:</Text>
+        <TextInput
+          style={styles.input}
+          value={uuid}
+          onChangeText={setUuid}
+        />
+      </View>
+      <View style={styles.inputGroup}>
+        <Text>Major:</Text>
+        <TextInput
+          style={styles.input}
+          value={major}
+          onChangeText={setMajor}
+          keyboardType="numeric"
+        />
+      </View>
+      <View style={styles.inputGroup}>
+        <Text>Minor:</Text>
+        <TextInput
+          style={styles.input}
+          value={minor}
+          onChangeText={setMinor}
+          keyboardType="numeric"
+        />
+      </View>
+
+      {/* Conditionally render Start/Stop button */}
+      {isAdvertising ? (
+        <Button title="Stop" onPress={stopBeacon} />
+      ) : (
+        <Button title="Start" onPress={startBeacon} />
+      )}
+
+      {/* Beacon status feedback */}
+      <Text style={styles.status}>
+        {isAdvertising
+          ? 'Beacon is currently advertising'
+          : 'Beacon is not advertising'}
+      </Text>
+
+      {/* Additional status message (e.g. "Beacon has been stopped") */}
+      {statusMessage !== '' && (
+        <Text style={styles.statusMessage}>{statusMessage}</Text>
+      )}
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    padding: 20,
   },
-  sectionTitle: {
+  title: {
     fontSize: 24,
     fontWeight: '600',
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  sectionDescription: {
+  inputGroup: {
+    marginBottom: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 4,
+    marginTop: 5,
+    padding: 8,
+  },
+  status: {
+    marginTop: 16,
+    fontSize: 16,
+  },
+  statusMessage: {
     marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
+    fontStyle: 'italic',
+    color: 'blue',
   },
 });
 
